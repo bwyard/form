@@ -115,7 +115,7 @@ pub fn triangle(p: Vec2, a: Vec2, b: Vec2, c: Vec2) -> f32 {
     let inside = (s * (v0.x * e0.y - v0.y * e0.x))
         .min(s * (v1.x * e1.y - v1.y * e1.x))
         .min(s * (v2.x * e2.y - v2.y * e2.x));
-    d * inside.signum().neg()
+    d * (-inside.signum())
 }
 
 /// Signed distance from point `p` to a ring (annulus).
