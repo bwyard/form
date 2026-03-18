@@ -1,0 +1,10 @@
+{
+  "name": "form",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "test": "cargo test --workspace",
+    "build": "cargo build --workspace",
+    "watch": "cargo watch -x 'test -p form-sdf'"
+  }
+}

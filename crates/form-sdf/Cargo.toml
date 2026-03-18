@@ -1,0 +1,12 @@
+[package]
+name = "form-sdf"
+description = "Signed distance functions for procedural graphics — 2D and 3D primitives, CSG operations, domain transforms"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["sdf", "graphics", "procedural", "game-dev", "geometry"]
+categories = ["graphics", "game-engines", "mathematics"]
+
+[dependencies]
+glam = { workspace = true }
