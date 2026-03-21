@@ -15,15 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: false
 
-      - name: Checkout prime (path dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: bwyard/prime
-          path: ../prime
-          token: ${{ secrets.PRIME_REPO_TOKEN }}
+      - name: Clone prime (path dependency)
+        # actions/checkout restricts paths to within GITHUB_WORKSPACE.
+        # Our Cargo path deps expect prime as a sibling of form (../prime).
+        # Clone manually to RUNNER_WORKSPACE so the relative path resolves correctly.
+        run: |
+          git clone https://x-access-token:${{ secrets.PRIME_REPO_TOKEN }}@github.com/bwyard/prime.git \
+            ${{ runner.workspace }}/prime
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -52,12 +51,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout prime (path dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: bwyard/prime
-          path: ../prime
-          token: ${{ secrets.PRIME_REPO_TOKEN }}
+      - name: Clone prime (path dependency)
+        run: |
+          git clone https://x-access-token:${{ secrets.PRIME_REPO_TOKEN }}@github.com/bwyard/prime.git \
+            ${{ runner.workspace }}/prime
 
       - name: Install Rust stable + wasm target
         uses: dtolnay/rust-toolchain@stable
