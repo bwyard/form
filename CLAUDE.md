@@ -5,6 +5,18 @@ Read claude-resources/CLAUDE.md first, then this file.
 
 ---
 
+## Core Philosophy
+
+**Math reads as visual art.** SDFs describe shapes, noise describes texture, splines describe motion. A scene is a pure function of space.
+
+Describe the world with functions, not data structures. No mesh files, no hardcoded geometry tables — generate everything at evaluation time. Pure functional throughout: same inputs, same outputs, no side effects, no state.
+
+This is what makes FORM a reference implementation rather than just another graphics library.
+
+**Probabilistic / diffusion direction (roadmap):** Probabilistic ray marching, soft shadows via Monte Carlo sampling, ambient occlusion estimation, depth-of-field — all built on PRIME's sampler layer. Planned for form-render phase.
+
+---
+
 ## What is FORM?
 
 Math-first procedural graphics framework. Game geometry, characters, and environments defined as pure mathematical functions (SDFs — signed distance functions), not mesh files. Pairs with SCORE (audio).
