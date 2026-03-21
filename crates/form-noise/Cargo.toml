@@ -1,0 +1,12 @@
+[package]
+name        = "form-noise"
+description = "Noise functions for procedural graphics — value noise, Perlin, FBM, Worley, domain warping"
+version.workspace    = true
+edition.workspace    = true
+license.workspace    = true
+repository.workspace = true
+keywords    = ["noise", "procedural", "graphics", "perlin", "fbm"]
+categories  = ["graphics", "game-engines", "mathematics"]
+
+[dependencies]
+prime-noise = { workspace = true }
