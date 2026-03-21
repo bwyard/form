@@ -4,3 +4,5 @@ node_modules/
 dist/
 *.log
 .DS_Store
+# wasm-pack build output — generated, not committed
+packages/form-noise-wasm/

@@ -8,5 +8,11 @@ repository.workspace = true
 keywords    = ["noise", "procedural", "graphics", "perlin", "fbm"]
 categories  = ["graphics", "game-engines", "mathematics"]
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 prime-noise = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
