@@ -154,6 +154,72 @@ pub fn to_ppm(pixels: &[u8], width: u32, height: u32) -> Vec<u8> {
     out
 }
 
+/// Write an RGB pixel buffer to uncompressed BMP format bytes.
+///
+/// BMP opens natively on Windows with no tools required.
+/// Pixels are written bottom-to-top (BMP convention), with each row
+/// padded to a 4-byte boundary.
+///
+/// # Arguments
+/// * `pixels` — raw RGB buffer, row-major top-to-bottom, `width * height * 3` bytes
+/// * `width`  — image width in pixels
+/// * `height` — image height in pixels
+///
+/// # Returns
+/// `Vec<u8>` containing a valid 24-bit uncompressed BMP file.
+pub fn to_bmp(pixels: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let row_size   = (width * 3 + 3) & !3;          // pad each row to 4-byte boundary
+    let pixel_data = row_size * height;
+    let file_size  = 54 + pixel_data;
+
+    let mut out = Vec::with_capacity(file_size as usize);
+
+    // BMP file header (14 bytes)
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&file_size.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());      // reserved
+    out.extend_from_slice(&0u16.to_le_bytes());      // reserved
+    out.extend_from_slice(&54u32.to_le_bytes());     // pixel data offset
+
+    // DIB header — BITMAPINFOHEADER (40 bytes)
+    out.extend_from_slice(&40u32.to_le_bytes());     // header size
+    out.extend_from_slice(&width.to_le_bytes());
+    out.extend_from_slice(&height.to_le_bytes());    // positive = bottom-to-top
+    out.extend_from_slice(&1u16.to_le_bytes());      // colour planes
+    out.extend_from_slice(&24u16.to_le_bytes());     // bits per pixel
+    out.extend_from_slice(&0u32.to_le_bytes());      // no compression
+    out.extend_from_slice(&pixel_data.to_le_bytes());
+    out.extend_from_slice(&2835u32.to_le_bytes());   // 72 dpi horizontal
+    out.extend_from_slice(&2835u32.to_le_bytes());   // 72 dpi vertical
+    out.extend_from_slice(&0u32.to_le_bytes());      // colours in table
+    out.extend_from_slice(&0u32.to_le_bytes());      // important colours
+
+    // Pixel data — BMP is bottom-to-top, BGR order
+    let (_, bmp_pixels) = (0..height).fold(
+        ((), Vec::with_capacity(pixel_data as usize)),
+        |(_, mut buf), row| {
+            let src_row = height - 1 - row;
+            let (_, _) = (0..width).fold(
+                ((), &mut buf),
+                |(_, b), col| {
+                    let i = ((src_row * width + col) * 3) as usize;
+                    b.push(pixels[i + 2]); // B
+                    b.push(pixels[i + 1]); // G
+                    b.push(pixels[i]);     // R
+                    ((), b)
+                },
+            );
+            // row padding
+            let pad = (row_size - width * 3) as usize;
+            buf.extend(std::iter::repeat(0u8).take(pad));
+            ((), buf)
+        },
+    );
+
+    out.extend_from_slice(&bmp_pixels);
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

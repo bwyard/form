@@ -9,5 +9,6 @@ keywords    = ["raymarching", "sdf", "renderer", "procedural", "graphics"]
 categories  = ["graphics", "rendering", "mathematics"]
 
 [dependencies]
-glam      = { workspace = true }
-form-sdf  = { path = "../form-sdf" }
+glam         = { workspace = true }
+form-sdf     = { path = "../form-sdf" }
+form-animate = { path = "../form-animate" }

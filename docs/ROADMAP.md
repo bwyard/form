@@ -113,18 +113,25 @@ None of these steps store state. Each is a pure function `f(sdf, params) -> sdf`
 
 This is the architectural claim Form makes: **biological complexity is mathematical composition, not stored data.**
 
-### Corruption in animation
+### Corruption and animation — separate proofs
 
-When Form adds time (Phase 3), time is a parameter — not a trigger. The corruption stack accepts `t` as an input and the same composition rules apply:
+Corruption and gait are **two independent architectural claims**, each proved separately:
+
+- **Corruption proof** (`head(p) -> f32`) — organic complexity from mathematical composition. No time. No motion. A static corrupted sphere that reads as a human head.
+- **Gait proof** (`figure(p, t) -> f32`) — motion from a pure function of time. Minimal geometry. The body is simple; the gait math is the point.
+
+These are intentionally kept separate until both are proven. Composing them before either is solid would make both arguments harder to see.
+
+When Form adds time to the corruption stack, `t` is a parameter — not a trigger. The same composition rules apply:
 
 ```
 sphere
-  → symmetry_break(t)
-  → lorenz_gait(t, sigma, rho, beta)   // Lorenz system drives lateral/vertical/sagittal
-  → micro_surface_fbm(t)
+  → symmetry_break(t)       // corruption that varies over time
+  → lorenz_gait(t, ...)     // gait driving whole-figure translation
+  → micro_surface_fbm(t)    // time-varying surface noise
 ```
 
-The running-person demo is the proof of concept: a human running, fully derived from trig and chaos math, no mesh, no keyframes, no stored poses.
+That composition (Phase 7) is the final demo. But arriving there requires proving each layer first.
 
 ---
 
@@ -247,11 +254,22 @@ No mesh, no keyframes — everything derived from trig, splines, and dynamics.
 - [ ] Bezier / Hermite splines: trajectory and easing helpers
 - [ ] Time-parameterized output: `animate(t: f32) -> Pose` — pure function
 
-Flagship target: **running-person demo**
+**Two separate demos — these are distinct proofs:**
+
+**Demo A — corrupted head** (corruption architecture proof, no animation)
 - Ground state: sphere (mathematical truth)
-- Corruption stack: bilateral symmetry break → brow ridge → occipital → temporal hollow → jaw → micro-surface FBM
-- Gait driven by Lorenz system through full corruption stack
-- No mesh files, no stored poses — all derived at evaluation time
+- Corruption stack: bilateral symmetry break → brow ridge → occipital → temporal hollow → jaw → micro-surface noise
+- Demonstrates: organic complexity = mathematical composition, not stored data
+- No gait. No time parameter. Just `head(p) -> f32`.
+
+**Demo B — running figure** (animation proof, minimal corruption)
+- Ground state: simple capsule or sphere-chain body (not the corrupted head)
+- Gait driven by pure trig or Lorenz system: `figure(p, t) -> f32`
+- Demonstrates: motion = pure function of time, no keyframes, no stored poses
+- The body shape is intentionally simple — the point is the gait math, not the anatomy
+
+These two proofs can later be composed (Phase 7) into a corrupted running figure.
+But combining them prematurely would obscure both arguments.
 
 ---
 
