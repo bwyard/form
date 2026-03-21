@@ -6,3 +6,5 @@ dist/
 .DS_Store
 # wasm-pack build output — generated, not committed
 packages/form-noise-wasm/
+# thesis docs — local only, not ready to publish
+THESIS.md
