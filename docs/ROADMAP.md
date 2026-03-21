@@ -37,8 +37,6 @@ Form follows the same rule in the spatial domain:
 - **No JUMP** — the ray marcher does not branch to precomputed data
 - **MARCH+EVALUATE** — advance position along the ray, evaluate the SDF at each step
 
-The corruption stack enforces this at every level of detail. Micro-surface texture is not a stored normal map — it is FBM evaluated at that position. Every complexity, at every scale, is evaluation not lookup.
-
 | | Score | Form |
 |---|---|---|
 | Axis | Time (`n`) | Space (`p`) |
@@ -67,285 +65,485 @@ The axis type is the only variable:
 | Form | `p: Vec3` | space (position along ray) |
 | Stage | `(world, t, pos)` | state-time |
 
-This means the thesis is not four separate proofs — it is one proof instantiated four times with different axis types. Prime is the shared foundation that all four compile onto. When Prime gains an explicit scan/march loop primitive, all four consumers will call the same instruction.
-
-The assembly rule is: **no STORE, no JUMP — only LOAD, EVAL, APPEND, ADVANCE.**
-
 ---
 
 ## Corruption architecture
 
-The corruption model is Form's core conceptual contribution. It is not a feature of Phase 3 — it is the way all Form scenes are structured from the start.
+The corruption model is Form's core conceptual contribution.
 
 ### What it is
 
 Every scene has two layers:
 
 1. **Ground state** — mathematical truth. A sphere. A box. A plane. Defined exactly by its SDF.
-2. **Corruption stack** — a sequence of pure functions applied to the ground state, each one adding biological/physical irregularity.
+2. **Corruption stack** — a sequence of pure domain warp functions applied to the input point before SDF evaluation. Each one adds biological or physical irregularity.
 
-The output is `corrupt(ground, params)` — still a pure function. The corruption stack is not mutation. It is composition.
+The key: corruption warps the **input point**, not the **SDF output value**. `corrupt(p) -> p'`, then `sdf(p')`. This preserves SDF validity — the field stays well-formed.
+
+The output is `sdf(corrupt(p))` — still a pure function. The corruption stack is not mutation. It is composition.
 
 ### Corruption as proof strategy
 
-The corruption model is not a technique inside Form — it is Form's *proof strategy*, the same role the scan loop plays in Score.
+The corruption model is Form's proof strategy, the same role the scan loop plays in Score.
 
-Score answers the sceptic's challenge "surely audio needs mutable buffers" with the sample scan.
+Score answers "surely audio needs mutable buffers" with the sample scan.
 Form answers "surely geometry needs stored data" with the corruption stack.
 
-The implicit claim: **organic complexity is not evidence that you need stored data.** Biological shapes look complex. But complexity emerges from composing pure functions — not from storing data.
+**The claim:** organic complexity is not evidence that you need stored data. Biological shapes look complex. Complexity emerges from composing pure functions — not from storing data.
 
-### Why this matters
+### Two separate proofs — kept deliberately separate
 
-A perfect sphere is Platonic. A human head is a sphere run through a corruption stack:
+**Demo A — static corruption** (`head(p) -> f32`, no time parameter)
+- Ground state: sphere
+- Corruption stack: a sequence of domain warps applied one at a time
+- Proves: organic complexity = mathematical composition of pure functions
+- No animation. No time. Pure space.
 
-```
-sphere
-  → bilateral_symmetry_break(asymmetry: 0.03)
-  → brow_ridge(prominence: 0.8, width: 0.6)
-  → occipital_protrusion(angle: 15.0)
-  → temporal_hollow(depth: 0.04)
-  → jaw_shape(width: 0.9, angle: 12.0)
-  → micro_surface_fbm(octaves: 6, amplitude: 0.005)
-```
+**Demo B — pure animation** (`figure(p, t) -> f32`, simple body)
+- Ground state: simple capsule body (no corruption)
+- Time parameter drives gait: lateral sway, vertical bob, sagittal rotation
+- Proves: motion = pure function of time, no keyframes, no stored poses
+- Comes after Demo A. Animation is introduced only after static corruption is proven.
 
-None of these steps store state. Each is a pure function `f(sdf, params) -> sdf`. The full stack is function composition.
+These two proofs are composed later (Phase 8 engine integration) into a corrupted running figure. Combining them prematurely would obscure both arguments.
 
-This is the architectural claim Form makes: **biological complexity is mathematical composition, not stored data.**
+---
 
-### Corruption and animation — separate proofs
+## Testing philosophy
 
-Corruption and gait are **two independent architectural claims**, each proved separately:
+Every phase has three test layers. Nothing moves to the next phase until all three pass.
 
-- **Corruption proof** (`head(p) -> f32`) — organic complexity from mathematical composition. No time. No motion. A static corrupted sphere that reads as a human head.
-- **Gait proof** (`figure(p, t) -> f32`) — motion from a pure function of time. Minimal geometry. The body is simple; the gait math is the point.
+### T1 — Math tests (automated, no rendering)
+Pure unit tests. Run with `cargo test`. No BMP files, no visual inspection needed.
+- SDF values at known geometric points: inside → negative, outside → positive, surface → ≈ 0
+- Domain warp direction and magnitude: each warp moves points in the expected direction, by the expected amount, and leaves points outside its region unchanged
+- CSG correctness: union ≤ min(d1,d2), intersection ≥ max(d1,d2), subtract carves correctly
+- Smooth ops: blend region returns value between the two inputs, far from blend returns correct input
 
-These are intentionally kept separate until both are proven. Composing them before either is solid would make both arguments harder to see.
+### T2 — Render tests (automated, small images)
+Small renders (11×11 or 16×16 pixels) with pixel-level assertions. No BMP inspection needed.
+- Hit test: center pixel of a centered shape is not sky-colored
+- Miss test: corner pixels that should miss are sky-dominant (B > R)
+- Symmetry test: symmetric SDF produces symmetric pixel output (left half ≈ right half)
+- Brightness test: lit surface pixels are brighter than ambient minimum
 
-When Form adds time to the corruption stack, `t` is a parameter — not a trigger. The same composition rules apply:
-
-```
-sphere
-  → symmetry_break(t)       // corruption that varies over time
-  → lorenz_gait(t, ...)     // gait driving whole-figure translation
-  → micro_surface_fbm(t)    // time-varying surface noise
-```
-
-That composition (Phase 7) is the final demo. But arriving there requires proving each layer first.
+### T3 — Visual confirmation (user opens BMP, I write expected output)
+Used only for proportion and aesthetic sign-off, not for debugging. I write an exact "Expected:" description before every render. The user opens the BMP and confirms or reports the difference. We do not proceed to the next step until T3 passes.
 
 ---
 
 ## Milestones
 
-| Milestone | Target | Status |
-|---|---|---|
-| form-sdf complete | 2026-03-18 | ✅ Done |
-| form-noise + WASM | 2026-04-07 | Phase 2 |
-| form-animate (gait/IK) | 2026-04-21 | Phase 3 |
-| form-render (offline CPU) | 2026-05-05 | Phase 4 |
-| TypeScript CLI + component API | 2026-05-19 | Phase 5 |
-| SCORE ↔ FORM bridge | 2026-06-02 | Phase 6 |
-| Bevy integration demo | 2026-06-23 | Phase 7 — key milestone |
-| crates.io publish + docs site | 2026-07-07 | Phase 8 |
+| Milestone | Status |
+|---|---|
+| Phase 0 — form-sdf | ✅ Done — 40/40 tests |
+| Phase 1 — form-render | ✅ Core done — T2 render tests gap to fill |
+| Phase 2 — Primitive gallery | Next |
+| Phase 3 — Demo A: Corruption stack (10 steps) | Blocked on Phase 2 |
+| Phase 4 — Demo B: Gait animation (5 steps) | Blocked on Phase 3 |
+| Phase 5 — form-noise | Blocked on prime-noise 3D + simplex |
+| Phase 6 — TypeScript API | Future |
+| Phase 7 — Score bridge | Future |
+| Phase 8 — Bevy integration | KEY MILESTONE |
+| Phase 9 — Release | Future |
 
 ---
 
 ## PRIME dependency map
 
-FORM consumes PRIME crates. Each phase lists its PRIME dependencies.
-Pattern: Rust implementation → TS port → WASM drop-in (same API, no consumer changes).
-
 | Form phase | PRIME dependency | Status |
 |---|---|---|
-| Phase 1 (form-sdf) | prime-sdf (Rust + TS) | ✅ Done — form-sdf re-exports prime-sdf |
-| Phase 2 (form-noise) | prime-noise (Rust + TS port) | Waiting on prime-noise TS port |
-| Phase 3 (form-animate) | prime-dynamics (Lorenz, RK4, splines) | Waiting on prime-dynamics TS port |
-| Phase 4 (form-render) | prime-render pattern + prime-random (samplers) | Waiting on prime-render |
-| Phase 5+ | prime-interp | TBD |
+| Phase 0 (form-sdf) | prime-sdf | ✅ Done |
+| Phase 5 (form-noise) | prime-noise (3D, simplex, FBM) | Waiting on prime |
+| Phase 4 (form-animate Lorenz) | prime-dynamics (Lorenz, RK4) | Waiting on prime |
+| Phase 6 (form-core) | prime-interp (spline/easing) | TBD |
 
 ---
 
 ## Phase detail
 
-### Phase 0 — Scaffold ✅ (2026-03-18)
-- Cargo workspace root
-- pnpm workspace root
-- form-sdf crate skeleton
-- Git repo initialized
+---
+
+### Phase 0 — form-sdf ✅ Done (2026-03-18)
+
+**Crate: `form-sdf`. Dependency: `prime-sdf` (thin re-export). 40/40 tests.**
+
+- 2D primitives: circle, box_2d, rounded_box, capsule_2d, line_segment, triangle, ring
+- 3D primitives: sphere, box_3d, capsule_3d, cylinder, torus, plane
+- CSG: union, intersection, subtract, xor, smooth_union, smooth_intersection, smooth_subtract
+- Domain: translate, rotate_2d, scale, repeat, mirror_x, mirror_y, elongate
 
 ---
 
-### Phase 1 — form-sdf ✅ (2026-03-18)
-**Crate: `form-sdf`. Dependency: `prime-sdf` only (thin re-export).**
-**40/40 tests passing.**
+### Phase 1 — form-render ✅ Core done — gap work needed
 
-2D SDF primitives:
-- [x] circle
-- [x] box_2d
-- [x] rounded_box
-- [x] capsule_2d
-- [x] line_segment
-- [x] triangle
-- [x] ring
+**Crate: `form-render`. No external PRIME dependency.**
 
-3D SDF primitives:
-- [x] sphere
-- [x] box_3d
-- [x] capsule_3d
-- [x] cylinder
-- [x] torus
-- [x] plane
+Core components verified correct:
+- [x] Sphere tracing fold (`march.rs`) — 8 tests
+- [x] Normal estimation, Lambert diffuse, hard shadow (`light.rs`) — 5 tests
+- [x] Camera look-at, ray generation (`camera.rs`) — 4 tests
+- [x] Pixel fold, BMP output, PPM output (`image.rs`) — 5 tests
+- [x] Sphere example renders correctly (T3 confirmed)
 
-CSG operations:
-- [x] union
-- [x] intersection
-- [x] subtract
-- [x] xor
-- [x] smooth_union
-- [x] smooth_intersection
-- [x] smooth_subtract
+**Gap — T2 render tests to add before Phase 2:**
+- [ ] Sky pixel is blue-dominant: corner pixels have B > R
+- [ ] Hit pixel is not sky: center pixel of sphere render is brighter than sky
+- [ ] Symmetric SDF produces symmetric pixels: left half ≈ right half
+- [ ] BMP file dimensions are correct for given width/height
 
-Domain operations:
-- [x] translate
-- [x] rotate_2d
-- [x] scale
-- [x] repeat
-- [x] mirror_x
-- [x] mirror_y
-- [x] elongate
+Done criteria: all gap tests pass, `cargo test -p form-render` green.
 
 ---
 
-### Phase 2 — form-noise (target: 2026-04-07)
-**Crate: `form-noise`. PRIME dependency: `prime-noise` TS port.**
+### Phase 2 — Primitive gallery
 
-Build `form-noise` Rust crate in parallel with prime-noise. Integrate TS port when it ships.
+**One example + test block per SDF primitive. Confirms renderer handles every shape.**
 
-Noise functions:
-- [ ] Value noise (2D, 3D)
-- [ ] Gradient noise (Perlin-style, 2D, 3D)
-- [ ] Simplex noise (2D, 3D)
-- [ ] FBM — fractal Brownian motion (octaves, lacunarity, gain)
-- [ ] Domain warping (IQ-style — noise warps the input to another noise call)
+For each primitive:
+- T1: inside/outside/surface SDF value tests
+- T2: center hits, corners miss, symmetry where applicable
+- T3: written expected output, user confirms
 
-WASM:
-- [ ] Add `wasm32-unknown-unknown` target to `form-noise`
-- [ ] `wasm-pack` build pipeline
-- [ ] JS bindings (`form-noise-wasm` npm package)
+Primitives:
 
-Success criteria:
-1. `cargo test -p form-noise` full coverage
-2. Every public function has rustdoc with `# Math` section
-3. FBM + domain warping visually correct (manual preview via form-render or PPM output)
-4. WASM build green
+| Example | T3 Expected |
+|---|---|
+| `ex_sphere` | White sphere, blue sky gradient at edges |
+| `ex_box` | Cube with sharp edges and flat faces |
+| `ex_capsule` | Vertical cylinder with rounded top and bottom caps |
+| `ex_torus` | Donut ring, hole visible through center from camera angle |
+| `ex_cylinder` | Flat-topped cylinder, sharp top/bottom edges |
+| `ex_union` | Two spheres merged into a peanut shape |
+| `ex_subtract` | Sphere with a rectangular hole carved into it |
+| `ex_smooth_union` | Two spheres with a soft organic blend seam |
+| `ex_smooth_subtract` | Sphere with a smooth rounded dent |
 
----
-
-### Phase 3 — form-animate (target: 2026-04-21)
-**Crate: `form-animate`. PRIME dependency: `prime-dynamics` (Lorenz, RK4, spline math).**
-
-Gait and procedural animation as pure mathematical functions.
-No mesh, no keyframes — everything derived from trig, splines, and dynamics.
-
-- [ ] Gait math: walk cycle from pure trig (lateral sway, vertical bob, sagittal rotation)
-- [ ] Lorenz system driver: x=lateral, y=vertical, z=sagittal (chaos drives natural irregularity)
-- [ ] Procedural IK: limb positioning from joint constraints + target
-- [ ] Spring/damper: secondary motion (hair, cloth approximation)
-- [ ] Bezier / Hermite splines: trajectory and easing helpers
-- [ ] Time-parameterized output: `animate(t: f32) -> Pose` — pure function
-
-**Two separate demos — these are distinct proofs:**
-
-**Demo A — corrupted head** (corruption architecture proof, no animation)
-- Ground state: sphere (mathematical truth)
-- Corruption stack: bilateral symmetry break → brow ridge → occipital → temporal hollow → jaw → micro-surface noise
-- Demonstrates: organic complexity = mathematical composition, not stored data
-- No gait. No time parameter. Just `head(p) -> f32`.
-
-**Demo B — running figure** (animation proof, minimal corruption)
-- Ground state: simple capsule or sphere-chain body (not the corrupted head)
-- Gait driven by pure trig or Lorenz system: `figure(p, t) -> f32`
-- Demonstrates: motion = pure function of time, no keyframes, no stored poses
-- The body shape is intentionally simple — the point is the gait math, not the anatomy
-
-These two proofs can later be composed (Phase 7) into a corrupted running figure.
-But combining them prematurely would obscure both arguments.
+Done criteria: all 9 examples render correctly, T1+T2+T3 pass for each.
 
 ---
 
-### Phase 4 — form-render (target: 2026-05-05)
-**Crate: `form-render`. PRIME dependencies: `prime-render` pattern + `prime-random` (samplers for probabilistic effects).**
+### Phase 3 — Demo A: Corruption stack (10 steps)
 
-Offline CPU ray marcher for previews, tests, and standalone renders.
-Probabilistic rendering built on PRIME's sampler layer.
+**Proves: organic complexity = mathematical composition of pure functions.**
 
-Core renderer:
-- [ ] Sphere tracing loop (ray marching SDF fields)
-- [ ] Normal estimation (finite difference gradient)
-- [ ] Basic lighting (diffuse, specular, directional light)
-- [ ] Shadow rays (hard shadows)
-- [ ] PPM / PNG output
+`head(p: Vec3) -> f32` — no time parameter. Pure spatial SDF.
 
-Probabilistic / diffusion (built on prime-random samplers):
-- [ ] Soft shadows (Monte Carlo sampling along shadow ray)
-- [ ] Ambient occlusion estimation (hemisphere sampling)
-- [ ] Depth-of-field (aperture sampling, circle of confusion)
-- [ ] Path tracing path (global illumination approximation — research phase)
-
-GPU path (dev tool only):
-- [ ] `wgpu` compute shader for ray marching
-- [ ] Side-by-side CPU / GPU output comparison for validation
-
-Success criteria:
-1. Renders a sphere + box scene to PPM correctly
-2. Soft shadows and AO visually plausible
-3. Running-person demo renders offline at correct quality
+Each step is a separate example file and a separate test block. Every new warp function has T1 tests written before the example is rendered. T3 confirmation required before moving to the next step.
 
 ---
 
-### Phase 5 — TypeScript packages (target: 2026-05-19)
-**Packages: `form-core`, `form-cli`. PRIME dependency: prime-interp (for spline/easing helpers in scene compiler).**
+#### Step 0 — Bare sphere (baseline)
 
-Scene files as plain TypeScript — same philosophy as SCORE songs.
+```rust
+fn head_s0(p: Vec3) -> f32 { p.length() - 1.0 }
+```
 
-`form-core`:
-- [ ] Scene compiler (TS → SDF scene graph)
-- [ ] Component API: `sphere()`, `union()`, `translate()` etc. mirror Rust API
-- [ ] Scene type: pure description, no imperative mutations
+T1:
+- `head_s0(Vec3::ZERO) < 0.0` (inside)
+- `head_s0(Vec3::new(2.0, 0.0, 0.0)) > 0.0` (outside)
+- `head_s0(Vec3::X).abs() < 0.001` (on surface)
 
-`form-cli`:
-- [ ] `form dev` — watch scene file, hot-reload render preview
-- [ ] `form build` — compile scene to optimised SDF bytecode
-- [ ] `form render` — offline render via form-render
+T2: center hits, corners miss, left half == right half (symmetric)
 
----
-
-### Phase 6 — form-score-bridge (target: 2026-06-02)
-**Package: `form-score-bridge`. Peer dependency: `@score/core`.**
-
-Map SCORE audio parameters → FORM visual parameters. Music drives geometry.
-
-- [ ] BPM → animation speed
-- [ ] Amplitude → scale / intensity
-- [ ] Frequency → spatial frequency of noise
-- [ ] Beat events → corruption stack triggers
-- [ ] Live sync API: `bridge.tick(audioState) → sceneParams`
+T3 Expected: white sphere filling roughly 60% of frame, blue sky at edges, light from upper right
 
 ---
 
-### Phase 7 — Engine integrations (target: 2026-06-23) — KEY MILESTONE
-**Crate: `form-bevy`. Plugin API.**
+#### Step 1 — jaw_warp
 
-- [ ] Bevy plugin: expose SDF scene graph as Bevy component
-- [ ] Real-time GPU sphere tracing via Bevy render graph
-- [ ] Demo: procedural running character in Bevy, real-time
-- [ ] Unity C# bridge (research / spike)
-- [ ] Unreal BP/C++ bridge (research / spike)
+Widens the lower face by scaling x outward below the equator.
+
+```rust
+fn jaw_warp(p: Vec3) -> Vec3
+```
+
+T1:
+- Lower face point (x>0, y<0): `jaw_warp(p).x > p.x` (pushed outward)
+- Top of head (y>0.5): `jaw_warp(p) ≈ p` (identity — not in jaw region)
+- SDF at `(0.9, -0.3, 0)` is more negative after warp than bare sphere (surface further out)
+
+T2: center hits, corners miss
+
+T3 Expected: sphere noticeably wider at the bottom half, tapers at top — egg-like but inverted
 
 ---
 
-### Phase 8 — Release (target: 2026-07-07)
-- [ ] Publish `form-sdf`, `form-noise`, `form-animate` to crates.io
-- [ ] Docs site (mdBook)
-- [ ] GitHub README with visual demos
-- [ ] Blog post: "A running human in 50 lines of trig"
+#### Step 2 — asym_warp
+
+Tiny bilateral asymmetry — models natural skull drift between hemispheres.
+
+```rust
+fn asym_warp(p: Vec3) -> Vec3
+```
+
+T1:
+- `asym_warp(Vec3::new(0.5, 0.0, 0.0)).y != asym_warp(Vec3::new(-0.5, 0.0, 0.0)).y`
+- Drift magnitude < 0.02 (small perturbation, not deformation)
+
+T2: center hits, corners miss
+T2: left half pixel sum ≠ right half (asymmetry visible in output)
+
+T3 Expected: sphere with barely visible left/right imbalance — same overall shape but not perfectly symmetric
+
+---
+
+#### Step 3 — occipital_warp
+
+Flattens the back of the skull slightly.
+
+```rust
+fn occipital_warp(p: Vec3) -> Vec3
+```
+
+T1:
+- `occipital_warp(Vec3::new(0.0, 0.0, 0.8)).z < 0.8` (back pushed inward)
+- `occipital_warp(Vec3::new(0.0, 0.0, -0.8)) ≈ Vec3::new(0.0, 0.0, -0.8)` (front unchanged)
+
+T2: center hits, corners miss
+
+T3 Expected: sphere with slightly flattened back face — difficult to see from front camera, subtle silhouette change
+
+---
+
+#### Step 4 — brow_warp
+
+Pushes the forehead forward in a horizontal band at y ≈ 0.35, front hemisphere only.
+
+```rust
+fn brow_warp(p: Vec3) -> Vec3
+```
+
+T1:
+- `brow_warp(Vec3::new(0.0, 0.35, -0.8)).z < -0.8` (forehead pushed forward/further -z)
+- `brow_warp(Vec3::new(0.0, -0.5, -0.8)) ≈ Vec3::new(0.0, -0.5, -0.8)` (chin unchanged)
+- `brow_warp(Vec3::new(0.0, 0.35, 0.8)) ≈ Vec3::new(0.0, 0.35, 0.8)` (back hemisphere unchanged)
+
+T2: center hits, corners miss
+
+T3 Expected: subtle forward protrusion visible across the upper forehead — a slight shelf above the mid-face
+
+---
+
+#### Step 5 — composed warps
+
+All four warps applied in sequence: `brow_warp(occipital_warp(jaw_warp(asym_warp(p))))`.
+
+T1:
+- Composed SDF still valid: inside origin < 0, outside (2,0,0) > 0
+- All individual warp T1 assertions still pass when applied through composition
+
+T2: center hits, corners miss
+
+T3 Expected: sphere with a subtle head-like deformation — wider jaw, slight brow, flat back, tiny asymmetry. Not clearly a head yet but no longer a perfect sphere.
+
+---
+
+#### Step 6 — brow ridge (torus)
+
+A torus-shaped bulge across the forehead, front hemisphere only. Smooth-unioned with the head.
+
+T1:
+- Torus SDF is negative near `(0.0, 0.35, -1.0)` (on the brow)
+- Torus SDF is positive far from brow band `(0.0, -0.5, -1.0)`
+- `smooth_union(head, brow)` returns a value ≤ both inputs in the blend region
+- `smooth_union(head, brow)` returns ≈ head value where brow is far away
+
+T2: center hits, brightness variation visible (ridge lighter than surrounding)
+
+T3 Expected: a raised horizontal band visible across the upper forehead — like a brow bone
+
+---
+
+#### Step 7 — temporal hollows
+
+Two small spheres subtracted from the sides of the head at the temples.
+
+T1:
+- Hollow SDF is negative inside the hollow sphere position
+- After subtraction, SDF at hollow center is positive (region carved out)
+- Head SDF at origin unchanged (hollow doesn't reach the center)
+
+T2: center hits, shape still present
+
+T3 Expected: subtle inward dents visible at left and right sides of the head where the temples are
+
+---
+
+#### Step 8 — micro surface noise
+
+Sin-hash noise added to final SDF value. Amplitude 0.003 — sub-millimetre scale.
+
+T1:
+- `micro_surface(p)` returns value in `[-0.003, 0.003]`
+- `micro_surface(p) != micro_surface(p + Vec3::X * 0.01)` (spatially varying)
+- `micro_surface(p) != micro_surface(p + Vec3::Y * 0.01)` (varies in y too)
+
+T2: center still hits (noise too small to break march)
+
+T3 Expected: very faint surface grain — like skin texture at high resolution. Almost invisible at this scale.
+
+*Note: this step will be replaced in Phase 5 when prime-noise ships FBM.*
+
+---
+
+#### Step 9 — neck
+
+An elongated sphere below the head, smooth-unioned with blend.
+
+T1:
+- Neck SDF is negative at a point clearly inside the neck position
+- Neck SDF is positive at origin (inside head, outside neck)
+- `smooth_union(head, neck)` < `head` at the junction region (blend pulls surface inward)
+
+T2: center hits, rendered shape is taller than bare sphere
+
+T3 Expected: head sitting on a short cylindrical neck stub, with a smooth organic blend where they connect — no sharp seam
+
+---
+
+#### Step 10 — Demo A complete
+
+All steps composed. Final `head(p: Vec3) -> f32`.
+
+T1: all individual step T1 tests pass on the final composed function
+T2: center hits, shape clearly non-spherical
+T3 Expected: a recognisable simplified head shape — reads as a human head, not a sphere. Wider jaw, brow shelf, neck below, slight asymmetry.
+
+**Demo A done: organic complexity proven as mathematical composition.**
+
+---
+
+### Phase 4 — Demo B: Gait animation (5 steps)
+
+**Proves: motion = pure function of time. No keyframes. No stored poses.**
+
+`figure(p: Vec3, t: f32) -> f32` — simple capsule body. Corruption architecture is not present here. The body is intentionally minimal — the point is the gait math, not the anatomy.
+
+Animation comes after corruption is proven. These are independent claims.
+
+---
+
+#### Step 0 — Gait math baseline
+
+Extend existing 13 tests:
+
+T1:
+- `lateral_sway(0.0, amp, freq) = 0.0`
+- `lateral_sway(0.25, amp, freq) = amp` (peak at quarter period)
+- `lateral_sway(0.75, amp, freq) = -amp` (trough at three-quarter)
+- `vertical_bob(0.0, amp, freq) = 0.0`
+- `vertical_bob(0.125, amp, freq) = amp` (double frequency peak)
+- All three functions bounded by amplitude for all t in [0.0, 4.0]
+- All three deterministic
+
+---
+
+#### Step 1 — sphere + lateral_sway
+
+Render three BMPs: t=0.0, t=0.25, t=0.5.
+
+T1: sway values at t=0, 0.25, 0.5 are 0, +amplitude, 0
+
+T2:
+- t=0.0: center pixel hits (sphere centered)
+- t=0.25: center pixel misses or dims (sphere shifted right)
+- t=0.5: center pixel hits again (sphere back at center)
+
+T3:
+- t=0.0: "sphere centered in frame"
+- t=0.25: "sphere shifted to the right"
+- t=0.5: "sphere back at center"
+
+---
+
+#### Step 2 — + vertical_bob
+
+Render t=0.0, t=0.125, t=0.25.
+
+T1: bob values correct at each t
+
+T3:
+- t=0.0: "sphere centered"
+- t=0.125: "sphere shifted upward"
+- t=0.25: "sphere back near center"
+
+---
+
+#### Step 3 — + sagittal_rotation
+
+Rotation affects depth (z) — less visible from front-facing camera.
+
+T1: sagittal values correct, non-zero at t=0 due to phase offset
+
+T3: "subtle depth shift — sphere appears to shift slightly in z across t sequence"
+
+---
+
+#### Step 4 — capsule body + full gait
+
+Simple vertical capsule replacing the sphere. All three gait components active.
+
+T2: across t=0, 0.25, 0.5, 0.75 — center hits in some frames as body moves
+
+T3: "capsule shape traces a walking pattern — shifts side to side and bobs up/down. Motion is clearly cyclic and driven by time alone."
+
+---
+
+#### Step 5 — Demo B complete
+
+T3: "a simple body shape animated purely by trig functions. No keyframes. Motion emerges from math."
+
+**Demo B done: motion proven as a pure function of time.**
+
+---
+
+### Phase 5 — form-noise (Blocked)
+
+**Blocked on: prime-noise 3D + simplex + FBM.**
+
+When unblocked:
+- Replace sin-hash `micro_surface` in Demo A Step 8 with FBM from prime-noise
+- T1: noise values in expected range, spatially varying, no clipping
+- T2: noisy sphere surface reads differently from smooth sphere at same resolution
+- T3: "visible organic surface texture — skin-like grain replaces sin-hash approximation"
+
+---
+
+### Phase 6 — TypeScript API
+
+**Packages: `form-core`, `form-cli`.**
+
+Scene files as plain TypeScript. Same philosophy as SCORE songs.
+
+- `form-core`: sphere(), union(), translate() builder API — mirrors Rust API
+- `form-cli`: `form dev` (hot reload), `form build` (compile), `form render` (offline)
+
+---
+
+### Phase 7 — Score bridge
+
+**Package: `form-score-bridge`.**
+
+Audio parameters → scene parameters.
+- BPM → gait frequency
+- Amplitude → corruption intensity
+- Beat events → warp parameter changes
+
+---
+
+### Phase 8 — Bevy integration (KEY MILESTONE)
+
+**Crate: `form-bevy`.**
+
+Real-time GPU sphere tracing via Bevy render graph.
+Demo A + Demo B running live. The corrupted running figure — the full proof.
+
+---
+
+### Phase 9 — Release
+
+- Publish `form-sdf`, `form-noise`, `form-animate` to crates.io
+- Docs site (mdBook)
+- GitHub README with visual demos
+- Blog post: "A human head in 50 lines of math"
