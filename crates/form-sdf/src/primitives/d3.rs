@@ -110,4 +110,58 @@ mod tests {
     fn plane_above() { assert!(approx_eq(plane(Vec3::new(0.0, 5.0, 0.0), Vec3::Y, 0.0), 5.0)); }
     #[test]
     fn plane_below() { assert!(approx_eq(plane(Vec3::new(0.0, -3.0, 0.0), Vec3::Y, 0.0), -3.0)); }
+
+    // torus: major_r=3.0, minor_r=1.0, center=ZERO
+    #[test]
+    fn torus_outside() {
+        // (6, 0, 0): q = Vec2(6-3, 0) = Vec2(3, 0), |q| - 1 = 2.0
+        assert!(approx_eq(torus(Vec3::new(6.0, 0.0, 0.0), Vec3::ZERO, 3.0, 1.0), 2.0));
+    }
+    #[test]
+    fn torus_inside() {
+        // (3, 0.5, 0): q = Vec2(0, 0.5), |q| - 1 = -0.5
+        assert!(approx_eq(torus(Vec3::new(3.0, 0.5, 0.0), Vec3::ZERO, 3.0, 1.0), -0.5));
+    }
+    #[test]
+    fn torus_on_surface() {
+        // outer equator (4, 0, 0): q = Vec2(1, 0), |q| - 1 = 0
+        assert!(approx_eq(torus(Vec3::new(4.0, 0.0, 0.0), Vec3::ZERO, 3.0, 1.0), 0.0));
+    }
+
+    // cylinder: height=2.0, radius=1.0, center=ZERO
+    #[test]
+    fn cylinder_outside() {
+        // (3, 0, 0): lateral=2, axial=-1, q=(2,-1), max(q,0)=(2,0), len=2.0
+        assert!(approx_eq(cylinder(Vec3::new(3.0, 0.0, 0.0), Vec3::ZERO, 2.0, 1.0), 2.0));
+    }
+    #[test]
+    fn cylinder_inside() {
+        // (0, 0, 0): lateral=-1, axial=-1, q=(-1,-1), max(q,0)=0, max(-1,-1).min(0)=-1
+        assert!(approx_eq(cylinder(Vec3::ZERO, Vec3::ZERO, 2.0, 1.0), -1.0));
+    }
+    #[test]
+    fn cylinder_on_curved_surface() {
+        // (1, 0, 0): lateral=0, axial=-1, q=(0,-1), result=0
+        assert!(approx_eq(cylinder(Vec3::new(1.0, 0.0, 0.0), Vec3::ZERO, 2.0, 1.0), 0.0));
+    }
+
+    // capsule_3d: a=(0,0,0), b=(0,2,0), radius=0.5
+    #[test]
+    fn capsule_3d_midpoint() {
+        // (1, 1, 0): t=0.5, nearest=(0,1,0), dist=1.0, result=0.5
+        let d = capsule_3d(Vec3::new(1.0, 1.0, 0.0), Vec3::ZERO, Vec3::new(0.0, 2.0, 0.0), 0.5);
+        assert!(approx_eq(d, 0.5));
+    }
+    #[test]
+    fn capsule_3d_endpoint() {
+        // (1, 0, 0): t=0, nearest=(0,0,0), dist=1.0, result=0.5
+        let d = capsule_3d(Vec3::new(1.0, 0.0, 0.0), Vec3::ZERO, Vec3::new(0.0, 2.0, 0.0), 0.5);
+        assert!(approx_eq(d, 0.5));
+    }
+    #[test]
+    fn capsule_3d_on_surface() {
+        // (0.5, 1, 0): t=0.5, nearest=(0,1,0), dist=0.5, result=0.0
+        let d = capsule_3d(Vec3::new(0.5, 1.0, 0.0), Vec3::ZERO, Vec3::new(0.0, 2.0, 0.0), 0.5);
+        assert!(approx_eq(d, 0.0));
+    }
 }

@@ -85,4 +85,36 @@ mod tests {
         let p2 = repeat(Vec2::new(4.0, 0.0), period);
         assert!((p1 - p2).length() < EPSILON);
     }
+
+    // elongate: p - p.clamp(-h, h)
+    #[test]
+    fn elongate_zero_h_is_identity() {
+        // h=(0,0): clamp to 0, result = p unchanged
+        let p = elongate(Vec2::new(3.0, 2.0), Vec2::ZERO);
+        assert!((p - Vec2::new(3.0, 2.0)).length() < EPSILON);
+    }
+    #[test]
+    fn elongate_point_within_band_collapses_to_zero() {
+        // p inside [-h, h]: clamp returns p, result = 0
+        let p = elongate(Vec2::new(0.5, 0.0), Vec2::new(2.0, 1.0));
+        assert!(p.length() < EPSILON);
+    }
+    #[test]
+    fn elongate_point_beyond_band() {
+        // p=(5,0), h=(2,1): clamp to (2,0), result=(3,0)
+        let p = elongate(Vec2::new(5.0, 0.0), Vec2::new(2.0, 1.0));
+        assert!((p - Vec2::new(3.0, 0.0)).length() < EPSILON);
+    }
+
+    // scale: p / factor
+    #[test]
+    fn scale_halves_coordinates() {
+        let p = scale(Vec2::new(4.0, 6.0), 2.0);
+        assert!((p - Vec2::new(2.0, 3.0)).length() < EPSILON);
+    }
+    #[test]
+    fn scale_identity() {
+        let p = scale(Vec2::new(3.0, 5.0), 1.0);
+        assert!((p - Vec2::new(3.0, 5.0)).length() < EPSILON);
+    }
 }

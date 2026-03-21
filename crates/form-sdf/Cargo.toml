@@ -9,4 +9,5 @@ keywords = ["sdf", "graphics", "procedural", "game-dev", "geometry"]
 categories = ["graphics", "game-engines", "mathematics"]
 
 [dependencies]
-glam = { workspace = true }
+glam      = { workspace = true }
+prime-sdf = { workspace = true }

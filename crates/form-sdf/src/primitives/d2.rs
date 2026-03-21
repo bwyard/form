@@ -161,4 +161,41 @@ mod tests {
         let d = ring(Vec2::new(1.0, 0.0), Vec2::ZERO, 2.0, 1.0);
         assert!(approx_eq(d, 0.0));
     }
+
+    // triangle: a=(0,0), b=(2,0), c=(0,2) — CCW winding
+    #[test]
+    fn triangle_inside() {
+        // centroid-adjacent point (0.5, 0.5) → SDF ≈ -0.5
+        let d = triangle(
+            Vec2::new(0.5, 0.5),
+            Vec2::ZERO,
+            Vec2::new(2.0, 0.0),
+            Vec2::new(0.0, 2.0),
+        );
+        assert!(approx_eq(d, -0.5));
+    }
+
+    #[test]
+    fn triangle_outside() {
+        // point (3, 0) → nearest edge vertex (2, 0), distance = 1.0
+        let d = triangle(
+            Vec2::new(3.0, 0.0),
+            Vec2::ZERO,
+            Vec2::new(2.0, 0.0),
+            Vec2::new(0.0, 2.0),
+        );
+        assert!(approx_eq(d, 1.0));
+    }
+
+    #[test]
+    fn triangle_on_surface() {
+        // midpoint of edge AB → SDF = 0
+        let d = triangle(
+            Vec2::new(1.0, 0.0),
+            Vec2::ZERO,
+            Vec2::new(2.0, 0.0),
+            Vec2::new(0.0, 2.0),
+        );
+        assert!(approx_eq(d, 0.0));
+    }
 }
