@@ -1,0 +1,14 @@
+[package]
+name        = "form-animate"
+description = "Procedural animation math — gait, IK, splines, spring/damper. Pure functions of time."
+version.workspace    = true
+edition.workspace    = true
+license.workspace    = true
+repository.workspace = true
+keywords    = ["animation", "procedural", "gait", "ik", "graphics"]
+categories  = ["graphics", "game-engines", "mathematics"]
+
+[dependencies]
+glam = { workspace = true }
+# prime-dynamics — Lorenz, RK4, splines — added when prime-dynamics ships
+# prime-dynamics = { workspace = true }

@@ -1,0 +1,13 @@
+[package]
+name        = "form-render"
+description = "Offline CPU ray marcher — sphere tracing, lighting, image output. No STORE. No JUMP."
+version.workspace    = true
+edition.workspace    = true
+license.workspace    = true
+repository.workspace = true
+keywords    = ["raymarching", "sdf", "renderer", "procedural", "graphics"]
+categories  = ["graphics", "rendering", "mathematics"]
+
+[dependencies]
+glam      = { workspace = true }
+form-sdf  = { path = "../form-sdf" }

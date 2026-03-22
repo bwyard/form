@@ -1,7 +1,11 @@
 [workspace]
 members = [
     "crates/form-sdf",
+    "crates/form-raster",
     "crates/form-noise",
+    "crates/form-animate",
+    "crates/form-render",
+    "crates/form-wasm",
 ]
 resolver = "2"
 

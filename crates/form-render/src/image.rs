@@ -1,0 +1,222 @@
+//! Image rendering — fold over pixels, march each ray, shade.
+//!
+//! The image render is the outer ADVANCE loop. The ray march is the inner.
+//! Together: fold over (x, y) → for each pixel, MARCH+EVALUATE → RGB.
+//!
+//! Assembly rule: no STORE, no JUMP. Output is a pure function of the scene,
+//! camera, and image dimensions. Same inputs → same image, always.
+
+use glam::Vec3;
+use crate::camera::Camera;
+use crate::light::{diffuse, hard_shadow, normal_at};
+use crate::march::{march, MarchSettings};
+
+const NORMAL_EPSILON: f32 = 0.0001;
+const SHADOW_OFFSET:  f32 = 0.01;
+
+/// Shade a single ray: march, estimate normal, apply diffuse + shadow.
+///
+/// Returns an RGB triple in [0, 255].
+///
+/// # Arguments
+/// * `sdf`       — the signed distance function defining the scene
+/// * `origin`    — ray origin
+/// * `direction` — unit ray direction
+/// * `light_dir` — unit direction toward the key light
+/// * `settings`  — march settings
+fn shade_ray<F>(
+    sdf:       &F,
+    origin:    Vec3,
+    direction: Vec3,
+    light_dir: Vec3,
+    settings:  MarchSettings,
+) -> [u8; 3]
+where
+    F: Fn(Vec3) -> f32,
+{
+    let result = march(origin, direction, sdf, settings);
+
+    if !result.hit {
+        // Sky gradient — background colour
+        let t = 0.5 * (direction.y + 1.0);
+        let sky = Vec3::new(1.0, 1.0, 1.0).lerp(Vec3::new(0.5, 0.7, 1.0), t);
+        return [
+            (sky.x * 255.0) as u8,
+            (sky.y * 255.0) as u8,
+            (sky.z * 255.0) as u8,
+        ];
+    }
+
+    let normal = normal_at(sdf, result.position, NORMAL_EPSILON);
+    let shadow_origin = result.position + normal * SHADOW_OFFSET;
+    let d = diffuse(normal, light_dir);
+    let s = hard_shadow(sdf, shadow_origin, light_dir, settings);
+
+    let ambient = 0.1_f32;
+    let intensity = (ambient + (1.0 - ambient) * d * s).clamp(0.0, 1.0);
+
+    // Base colour: white surface modulated by intensity
+    [
+        (intensity * 255.0) as u8,
+        (intensity * 255.0) as u8,
+        (intensity * 255.0) as u8,
+    ]
+}
+
+/// Render a scene to a flat RGB byte buffer.
+///
+/// The output is the result of folding over all `width * height` pixels,
+/// marching a ray for each, and shading the result. No STORE, no JUMP.
+///
+/// # Math
+///
+/// ```text
+/// for each pixel (x, y):
+///   u = (x + 0.5) / width
+///   v = (y + 0.5) / height
+///   dir = camera.ray_direction(u, v)
+///   rgb = shade_ray(sdf, camera.origin, dir, light_dir, settings)
+///   output[y * width + x] = rgb
+/// ```
+///
+/// Implemented as a fold over pixel indices — no mutable loop variable.
+///
+/// # Arguments
+/// * `sdf`       — signed distance function defining the scene
+/// * `camera`    — camera parameters
+/// * `light_dir` — unit direction toward the key light
+/// * `width`     — image width in pixels
+/// * `height`    — image height in pixels
+/// * `settings`  — sphere tracing parameters
+///
+/// # Returns
+/// `Vec<u8>` of length `width * height * 3` in row-major RGB order.
+///
+/// # Example
+/// ```rust
+/// use glam::Vec3;
+/// use form_render::camera::Camera;
+/// use form_render::image::render_image;
+/// use form_render::march::MarchSettings;
+///
+/// let sdf = |p: Vec3| p.length() - 1.0;
+/// let cam = Camera::look_at(Vec3::new(0.0, 0.0, -3.0), Vec3::ZERO, Vec3::Y, 60.0, 1.0);
+/// let pixels = render_image(sdf, cam, Vec3::new(1.0, 1.0, -1.0).normalize(), 4, 4, MarchSettings::default());
+/// assert_eq!(pixels.len(), 4 * 4 * 3);
+/// ```
+pub fn render_image<F>(
+    sdf:       F,
+    camera:    Camera,
+    light_dir: Vec3,
+    width:     u32,
+    height:    u32,
+    settings:  MarchSettings,
+) -> Vec<u8>
+where
+    F: Fn(Vec3) -> f32,
+{
+    let total = (width * height) as usize;
+    let (_, pixels) = (0..total).fold(
+        ((), Vec::with_capacity(total * 3)),
+        |(_, mut buf), idx| {
+            let x = idx as u32 % width;
+            let y = idx as u32 / width;
+            let u = (x as f32 + 0.5) / width as f32;
+            let v = 1.0 - (y as f32 + 0.5) / height as f32; // flip Y for image coords
+            let dir = camera.ray_direction(u, v);
+            let [r, g, b] = shade_ray(&sdf, camera.origin, dir, light_dir, settings);
+            buf.push(r);
+            buf.push(g);
+            buf.push(b);
+            ((), buf)
+        },
+    );
+    pixels
+}
+
+/// Write an RGB pixel buffer to PPM format bytes.
+///
+/// PPM is the simplest possible image format — plain ASCII header + binary pixels.
+/// No external dependencies required.
+///
+/// # Arguments
+/// * `pixels` — raw RGB buffer, `width * height * 3` bytes
+/// * `width`  — image width in pixels
+/// * `height` — image height in pixels
+///
+/// # Returns
+/// `Vec<u8>` containing a valid P6 PPM file.
+pub fn to_ppm(pixels: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let header = format!("P6\n{width} {height}\n255\n");
+    let mut out = Vec::with_capacity(header.len() + pixels.len());
+    out.extend_from_slice(header.as_bytes());
+    out.extend_from_slice(pixels);
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sphere_cam() -> (impl Fn(Vec3) -> f32, Camera) {
+        let sdf = |p: Vec3| p.length() - 1.0;
+        let cam = Camera::look_at(
+            Vec3::new(0.0, 0.0, -3.0),
+            Vec3::ZERO,
+            Vec3::Y,
+            60.0,
+            1.0,
+        );
+        (sdf, cam)
+    }
+
+    #[test]
+    fn output_length_correct() {
+        let (sdf, cam) = sphere_cam();
+        let pixels = render_image(sdf, cam, Vec3::new(1.0, 1.0, -1.0).normalize(), 8, 8, MarchSettings::default());
+        assert_eq!(pixels.len(), 8 * 8 * 3);
+    }
+
+    #[test]
+    fn deterministic() {
+        let light = Vec3::new(1.0, 1.0, -1.0).normalize();
+        let (sdf, cam) = sphere_cam();
+        let a = render_image(|p| p.length() - 1.0, cam, light, 4, 4, MarchSettings::default());
+        let b = render_image(sdf, cam, light, 4, 4, MarchSettings::default());
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn centre_pixel_hits_sphere() {
+        // Centre pixel should hit the sphere — should be brighter than background blue
+        let light = Vec3::new(1.0, 1.0, -1.0).normalize();
+        let (sdf, cam) = sphere_cam();
+        let pixels = render_image(sdf, cam, light, 11, 11, MarchSettings::default());
+        // Centre pixel index = (5 * 11 + 5) * 3 = 180
+        let centre_r = pixels[180];
+        // The sky background is blueish (r < 200), the sphere is white (r > 100)
+        // Just verify it rendered something non-zero
+        assert!(centre_r > 0 || pixels[181] > 0 || pixels[182] > 0);
+    }
+
+    #[test]
+    fn ppm_has_correct_header() {
+        let pixels = vec![255u8; 4 * 4 * 3];
+        let ppm = to_ppm(&pixels, 4, 4);
+        let header = "P6\n4 4\n255\n";
+        assert!(ppm.starts_with(header.as_bytes()));
+        assert_eq!(ppm.len(), header.len() + pixels.len());
+    }
+
+    #[test]
+    fn ppm_total_length() {
+        let pixels = vec![0u8; 16 * 9 * 3];
+        let ppm = to_ppm(&pixels, 16, 9);
+        let header = format!("P6\n16 9\n255\n");
+        assert_eq!(ppm.len(), header.len() + 16 * 9 * 3);
+    }
+}

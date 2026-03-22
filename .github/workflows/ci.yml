@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev, "feature/**"]
+  pull_request:
+    branches: [main, dev]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone prime (path dependency)
+        # actions/checkout restricts paths to within GITHUB_WORKSPACE.
+        # Our Cargo path deps expect prime as a sibling of form (../prime).
+        # Clone manually to RUNNER_WORKSPACE so the relative path resolves correctly.
+        run: |
+          git clone https://x-access-token:${{ secrets.PRIME_REPO_TOKEN }}@github.com/bwyard/prime.git \
+            ${{ runner.workspace }}/prime
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: cargo clippy
+        run: cargo clippy --workspace -- -D warnings
+
+  wasm:
+    name: WASM build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone prime (path dependency)
+        run: |
+          git clone https://x-access-token:${{ secrets.PRIME_REPO_TOKEN }}@github.com/bwyard/prime.git \
+            ${{ runner.workspace }}/prime
+
+      - name: Install Rust stable + wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-wasm-
+
+      - name: wasm-pack build form-noise
+        run: wasm-pack build crates/form-noise --target web --out-dir ../../packages/form-noise-wasm

@@ -1,0 +1,18 @@
+[package]
+name        = "form-wasm"
+description = "WASM bindings for form — exposes SDF rendering to the browser"
+version.workspace   = true
+edition.workspace   = true
+license.workspace   = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+form-sdf    = { path = "../form-sdf" }
+form-raster = { path = "../form-raster" }
+glam        = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
