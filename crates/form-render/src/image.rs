@@ -269,6 +269,88 @@ mod tests {
         assert!(centre_r > 0 || pixels[181] > 0 || pixels[182] > 0);
     }
 
+    // T2 — render tests added for Phase 1 gap work
+
+    #[test]
+    fn corner_pixel_is_sky_blue_dominant() {
+        // Corners should miss the sphere and show sky — sky gradient is blue-dominant (B > R)
+        let light = Vec3::new(1.0, 1.0, -1.0).normalize();
+        let (sdf, cam) = sphere_cam();
+        let pixels = render_image(sdf, cam, light, 11, 11, MarchSettings::default());
+        // Top-left corner pixel (0, 0) — index 0
+        let r = pixels[0] as i32;
+        let b = pixels[2] as i32;
+        assert!(b > r, "top-left corner should be sky (B > R), got R={r} B={b}");
+        // Bottom-right corner (10, 10) — index (10*11 + 10)*3 = 360
+        let r2 = pixels[360] as i32;
+        let b2 = pixels[362] as i32;
+        assert!(b2 > r2, "bottom-right corner should be sky (B > R), got R={r2} B={b2}");
+    }
+
+    #[test]
+    fn centre_pixel_is_not_sky() {
+        // Sky pixels are always blue-dominant (B > R) — the sky gradient lerps from white to blue.
+        // A sphere hit renders as grayscale (R == G == B) because the surface colour is white.
+        // So a hit pixel has R ≈ B, while a sky pixel has B >> R.
+        let light = Vec3::new(1.0, 1.0, -1.0).normalize();
+        let (sdf, cam) = sphere_cam();
+        let pixels = render_image(sdf, cam, light, 11, 11, MarchSettings::default());
+        // Centre = (5*11+5)*3 = 180
+        let centre_r = pixels[180] as i32;
+        let centre_b = pixels[182] as i32;
+        // Sphere hit: R ≈ B (grayscale). Sky miss: B >> R.
+        // B - R < 20 confirms this is a sphere hit, not sky.
+        assert!(
+            centre_b - centre_r < 20,
+            "centre pixel should be sphere (grayscale, R≈B) not sky (B>>R), \
+             got R={centre_r} B={centre_b} diff={}",
+            centre_b - centre_r
+        );
+    }
+
+    #[test]
+    fn symmetric_sdf_produces_symmetric_pixels() {
+        // A unit sphere is symmetric — left half and right half pixel sums should match
+        let light = Vec3::new(0.0, 1.0, -1.0).normalize(); // symmetric light (no x component)
+        let (sdf, cam) = sphere_cam();
+        let pixels = render_image(sdf, cam, light, 10, 10, MarchSettings::default());
+        // Sum R channel for left 5 columns vs right 5 columns
+        let left_sum: u32 = (0..10)
+            .flat_map(|row| (0..5).map(move |col| (row * 10 + col) * 3))
+            .map(|i| pixels[i] as u32)
+            .sum();
+        let right_sum: u32 = (0..10)
+            .flat_map(|row| (5..10).map(move |col| (row * 10 + col) * 3))
+            .map(|i| pixels[i] as u32)
+            .sum();
+        // Allow small tolerance for floating point rounding across pixel boundaries
+        let diff = (left_sum as i64 - right_sum as i64).unsigned_abs();
+        assert!(
+            diff < 50,
+            "symmetric SDF should produce symmetric pixels — left_sum={left_sum} right_sum={right_sum} diff={diff}"
+        );
+    }
+
+    #[test]
+    fn bmp_file_has_correct_size() {
+        // BMP header is 54 bytes + padded pixel data
+        let width = 8u32;
+        let height = 8u32;
+        let pixels = vec![128u8; (width * height * 3) as usize];
+        let bmp = to_bmp(&pixels, width, height);
+        // Row size padded to 4 bytes: (8*3 + 3) & !3 = 24
+        let row_size = (width * 3 + 3) & !3;
+        let expected = 54 + row_size * height;
+        assert_eq!(bmp.len() as u32, expected, "BMP size mismatch");
+    }
+
+    #[test]
+    fn bmp_starts_with_magic_bytes() {
+        let pixels = vec![0u8; 4 * 4 * 3];
+        let bmp = to_bmp(&pixels, 4, 4);
+        assert_eq!(&bmp[0..2], b"BM", "BMP must start with 'BM' magic bytes");
+    }
+
     #[test]
     fn ppm_has_correct_header() {
         let pixels = vec![255u8; 4 * 4 * 3];
