@@ -54,6 +54,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "form-wasm"
+version = "0.1.0"
+dependencies = [
+ "form-raster",
+ "form-sdf",
+ "glam",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "glam"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
