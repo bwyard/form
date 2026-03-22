@@ -31,6 +31,6 @@ pub mod light;
 pub mod march;
 
 pub use camera::Camera;
-pub use image::{render_image, to_ppm};
+pub use image::{render_image, to_bmp, to_ppm};
 pub use light::{diffuse, hard_shadow, normal_at};
 pub use march::{march, MarchResult, MarchSettings};
