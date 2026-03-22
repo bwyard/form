@@ -1,5 +1,5 @@
 # FORM — Claude Code Project Guide
-Last updated: 2026-03-18
+Last updated: 2026-03-21
 
 Read claude-resources/CLAUDE.md first, then this file.
 
@@ -11,17 +11,18 @@ Read claude-resources/CLAUDE.md first, then this file.
 
 Describe the world with functions, not data structures. No mesh files, no hardcoded geometry tables — generate everything at evaluation time. Pure functional throughout: same inputs, same outputs, no side effects, no state.
 
-This is what makes FORM a reference implementation rather than just another graphics library.
-
-**Probabilistic / diffusion direction (roadmap):** Probabilistic ray marching, soft shadows via Monte Carlo sampling, ambient occlusion estimation, depth-of-field — all built on PRIME's sampler layer. Planned for form-render phase.
+**FORM is not a game engine.** It is a library that plugs into Bevy/Unreal/Unity and provides the SDF math layer.
 
 ---
 
-## What is FORM?
+## 2D before 3D
 
-Math-first procedural graphics framework. Game geometry, characters, and environments defined as pure mathematical functions (SDFs — signed distance functions), not mesh files. Pairs with SCORE (audio).
+Every proof is done in 2D first, then extended to 3D. This is the core structural decision.
 
-**FORM is not a game engine.** It is a library that plugs into Bevy/Unreal/Unity and provides the SDF math layer.
+- **2D rasterizer** — for each pixel, evaluate `sdf(point) -> f32`. Inside = white, outside = dark. No ray marching, no camera, no lighting. Instant feedback, nothing to go wrong.
+- **3D renderer** — sphere tracing, camera, lighting. Used only after the 2D proof is solid.
+
+This means every corruption warp is proven in 2D before being extended to 3D. If a warp is wrong in 2D, you can see exactly what it does without any renderer complexity in the way.
 
 ---
 
@@ -29,102 +30,107 @@ Math-first procedural graphics framework. Game geometry, characters, and environ
 
 ```
 form/
-├── Cargo.toml              # Cargo workspace root
-├── package.json            # pnpm workspace root
+├── Cargo.toml
+├── package.json
+├── docs/
+│   └── ROADMAP.md
 ├── crates/
-│   ├── form-sdf/           # Phase 1 — SDF primitives, CSG, domain transforms
-│   ├── form-noise/         # Phase 2 — noise functions
-│   ├── form-animate/       # Phase 3 — gait/animation math
-│   └── form-render/        # Phase 4 — offline CPU renderer
+│   ├── form-sdf/       # Phase 0 — SDF primitives, CSG, domain transforms (DONE)
+│   ├── form-render/    # Phase 1 — 3D offline CPU ray marcher (DONE)
+│   ├── form-raster/    # Phase 2 — 2D flat rasterizer (next)
+│   ├── form-noise/     # Future — noise (blocked on prime-noise)
+│   └── form-animate/   # Future — gait (scaffolded)
 └── packages/
-    ├── form-core/          # Phase 5 — TS component API
-    ├── form-cli/           # Phase 5 — CLI
-    └── form-score-bridge/  # Phase 6 — SCORE ↔ FORM bridge
+    ├── form-core/      # Future — TS component API
+    ├── form-cli/       # Future — CLI
+    └── form-score-bridge/ # Future — SCORE bridge
 ```
 
 ---
 
-## Current phase: Phase 1 — form-sdf
+## Current phase: Phase 2 — form-raster (2D rasterizer)
 
-**Only build what is listed here. Nothing else.**
+**Build the 2D flat rasterizer before anything else.**
 
-### What to implement
-- 2D SDF primitives: circle, box_2d, rounded_box, capsule_2d, line_segment, triangle, ring
-- 3D SDF primitives: sphere, box_3d, capsule_3d, cylinder, torus, plane
-- CSG operations: union, intersection, subtract, xor, smooth_union, smooth_intersection, smooth_subtract
-- Domain operations: translate, rotate_2d, scale, repeat, mirror_x, mirror_y, elongate
+### What form-raster does
 
-### What NOT to do in Phase 1
-- No WASM targets
-- No TS packages
-- No naga or wgpu
-- No noise functions
-- No publishing to crates.io
+```rust
+// For each pixel, map to world space, evaluate SDF, color by sign
+fn rasterize(sdf: impl Fn(Vec2) -> f32, width: u32, height: u32, scale: f32) -> Vec<u8>
+```
+
+- Inside (sdf < 0): white `[255, 255, 255]`
+- Edge (sdf.abs() < edge_width): gray `[180, 180, 180]`
+- Outside (sdf > 0): dark blue `[20, 20, 40]`
+- Optional: distance gradient tint on outside
+
+No camera. No march. No lighting. Pure SDF → pixel color.
+
+### After form-raster
+
+Phase 3: 2D primitive gallery — one example per 2D SDF primitive, T1+T2+T3 each.
+Phase 4: 2D corruption stack — circle warped one layer at a time, 10 steps.
+Phase 5: 3D corruption stack — extend each proven 2D warp to 3D sphere.
+Phase 6: 2D gait — animated circle, pure trig, no corruption.
+Phase 7: 3D gait — extend to capsule body.
 
 ---
 
-## Code standards
+## Testing philosophy — three layers, every phase
 
-### Rustdoc — MANDATORY on every public function
+**T1 — Math tests** (`cargo test`, no rendering)
+SDF values at known points, warp direction/magnitude tests, CSG correctness.
 
-Every public function must have rustdoc with ALL of these sections:
-- One-line summary
-- `# Math` — the formula, written in plain text math notation
-- `# Arguments` — each param
-- `# Returns` — what the value means
-- `# Example` — runnable doctest
+**T2 — Render tests** (`cargo test`, small pixel buffer assertions)
+2D: inside pixels are white, outside pixels are dark, edge visible.
+3D: center hits, corners miss to sky, symmetry.
 
-See the `circle()` function in `crates/form-sdf/src/primitives/d2.rs` as the canonical example.
+**T3 — Visual confirmation** (user opens BMP)
+I write "Expected:" before every render. User confirms or reports diff.
+Do not proceed to next step until T3 passes.
 
-### Math reference
-All SDF implementations must match Inigo Quilez's reference: iquilezles.org/articles/distfunctions/
+---
 
-### Testing
-Every function gets at minimum:
-- outside test
-- inside test
-- on-surface test (where applicable)
-- edge case test
+## Testing requirements
 
-Use `const EPSILON: f32 = 1e-5` for float comparisons.
+Every SDF function:
+- `sdf(inside_point) < 0`
+- `sdf(outside_point) > 0`
+- `sdf(surface_point).abs() < EPSILON`
+
+Every domain warp function:
+- direction test: warp moves point in expected direction
+- magnitude test: displacement within expected bounds
+- identity test: outside warp region, point unchanged
+
+Use `const EPSILON: f32 = 1e-5`.
+
+---
+
+## Key architectural decisions
+
+- **Domain warps only**: corruption warps the input point `p`, never the SDF output value
+- **2D before 3D**: every warp proven in 2D first, then extended to 3D
+- **Demo A** (corruption) and **Demo B** (gait) are separate proofs — not combined until Phase 8
+- **THESIS.md** is local only — gitignored, never pushed
+- **smooth_union formula**: form-sdf uses quadratic smin (IQ). Example files use cubic smin (IQ). Both valid, do not mix within one scene.
 
 ---
 
 ## Commands
 
 ```bash
-# Build
-cargo build -p form-sdf
-
-# Test
-cargo test -p form-sdf
-
-# Watch tests
-cargo watch -x "test -p form-sdf"
-
-# Docs
-cargo doc -p form-sdf --open
+cargo test                          # all crates
+cargo test -p form-raster           # 2D rasterizer tests
+cargo test -p form-render           # 3D renderer tests
+cargo test -p form-sdf              # SDF primitive tests
+cargo run --example ex_circle -p form-raster   # 2D examples
+cargo run --example ex_sphere -p form-render   # 3D examples
+cargo clippy --workspace -- -D warnings        # must be clean
 ```
 
 ---
 
-## Environment requirements
+## Math reference
 
-- Rust 1.75+ (install via rustup)
-- `rustup target add wasm32-unknown-unknown` (for Phase 2+)
-- `cargo install wasm-pack` (for Phase 2+)
-- `cargo install cargo-watch` (for watch mode)
-
-Install Rust if not present:
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source $HOME/.cargo/env
-rustup default stable
-```
-
----
-
-## Sister project
-
-SCORE (EDM audio framework) — same pnpm/Nx monorepo structure, same philosophy.
-Songs in SCORE = plain JS files. Scenes in FORM = plain TS files.
+All SDF implementations must match Inigo Quilez: iquilezles.org/articles/distfunctions/

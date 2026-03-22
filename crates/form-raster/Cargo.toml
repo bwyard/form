@@ -1,0 +1,11 @@
+[package]
+name        = "form-raster"
+description = "2D SDF flat rasterizer — evaluates SDF per pixel, no ray marching"
+version.workspace   = true
+edition.workspace   = true
+license.workspace   = true
+repository.workspace = true
+
+[dependencies]
+glam      = { workspace = true }
+form-sdf  = { path = "../form-sdf" }
