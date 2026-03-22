@@ -11,10 +11,10 @@ use glam::Vec2;
 /// # Fields
 /// * `scale`      — world units visible from edge to edge (e.g. 3.0 = ±1.5 units)
 /// * `edge_width` — SDF distance threshold for the edge highlight line
-/// * `flat_bg`    — if true, outside pixels are a flat dark colour (no distance gradient).
-///                  Use this for domain-warp examples where the warped SDF no longer
-///                  has a uniform gradient, which would otherwise produce visible
-///                  background colour banding.
+/// * `flat_bg` — if true, outside pixels are a flat dark colour (no distance gradient).
+///   Use this for domain-warp examples where the warped SDF no longer
+///   has a uniform gradient, which would otherwise produce visible
+///   background colour banding.
 #[derive(Debug, Clone, Copy)]
 pub struct RasterSettings {
     pub scale:      f32,
