@@ -3,6 +3,7 @@ members = [
     "crates/form-sdf",
     "crates/form-noise",
     "crates/form-animate",
+    "crates/form-render",
 ]
 resolver = "2"
 
