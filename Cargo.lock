@@ -30,6 +30,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "form-raster"
+version = "0.1.0"
+dependencies = [
+ "form-sdf",
+ "glam",
+]
+
+[[package]]
 name = "form-render"
 version = "0.1.0"
 dependencies = [

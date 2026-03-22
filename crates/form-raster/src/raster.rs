@@ -11,15 +11,20 @@ use glam::Vec2;
 /// # Fields
 /// * `scale`      — world units visible from edge to edge (e.g. 3.0 = ±1.5 units)
 /// * `edge_width` — SDF distance threshold for the edge highlight line
+/// * `flat_bg`    — if true, outside pixels are a flat dark colour (no distance gradient).
+///                  Use this for domain-warp examples where the warped SDF no longer
+///                  has a uniform gradient, which would otherwise produce visible
+///                  background colour banding.
 #[derive(Debug, Clone, Copy)]
 pub struct RasterSettings {
     pub scale:      f32,
     pub edge_width: f32,
+    pub flat_bg:    bool,
 }
 
 impl Default for RasterSettings {
     fn default() -> Self {
-        RasterSettings { scale: 3.0, edge_width: 0.02 }
+        RasterSettings { scale: 3.0, edge_width: 0.02, flat_bg: false }
     }
 }
 
@@ -64,26 +69,71 @@ where
         let wx = (col as f32 + 0.5) / width  as f32 * settings.scale - half_scale;
         let wy = (row as f32 + 0.5) / height as f32 * settings.scale - half_scale;
         let p  = Vec2::new(wx, -wy); // flip y so +y is up in world space
-        pixel_color(sdf(p), settings.edge_width)
+        pixel_color(sdf(p), settings.edge_width, settings.flat_bg)
     }).collect()
 }
 
 /// Map an SDF distance value to an RGB colour.
 ///
 /// Inside < 0 → white. Edge ≈ 0 → gray. Outside > 0 → dark, gets darker with distance.
-fn pixel_color(d: f32, edge_width: f32) -> [u8; 3] {
+fn pixel_color(d: f32, edge_width: f32, flat_bg: bool) -> [u8; 3] {
     if d < -edge_width {
-        // Inside — white
         [255, 255, 255]
     } else if d.abs() <= edge_width {
-        // Edge line — gray
         [160, 160, 160]
+    } else if flat_bg {
+        [6, 6, 20]
     } else {
-        // Outside — dark blue-grey, gets darker further out
         let t = (d / 1.5).clamp(0.0, 1.0);
         let v = (20.0 + (1.0 - t) * 40.0) as u8;
         [v / 3, v / 3, v]
     }
+}
+
+/// Rasterize a time-parameterized 2D SDF into a sequence of RGB pixel buffers.
+///
+/// Each frame evaluates the SDF at `t = frame_index * dt`.
+/// The SDF signature is `Fn(Vec2, f32) -> f32` — space point and time.
+///
+/// # Arguments
+/// * `sdf`         — time-parameterized SDF: `(Vec2, t) → f32`
+/// * `width`       — output image width in pixels
+/// * `height`      — output image height in pixels
+/// * `settings`    — scale, edge width, background style
+/// * `frame_count` — number of frames to render
+/// * `dt`          — time step between frames in seconds
+///
+/// # Returns
+/// Vec of RGB pixel buffers, one per frame, each `width * height * 3` bytes.
+///
+/// # Example
+/// ```rust
+/// use glam::Vec2;
+/// use form_raster::{rasterize_sequence, RasterSettings};
+///
+/// // Pulsing circle: radius oscillates with time
+/// let sdf = |p: Vec2, t: f32| p.length() - (0.3 + (t * 2.0).sin() * 0.05);
+/// let frames = rasterize_sequence(sdf, 8, 8, RasterSettings::default(), 4, 0.25);
+/// assert_eq!(frames.len(), 4);
+/// assert_eq!(frames[0].len(), 8 * 8 * 3);
+/// ```
+pub fn rasterize_sequence<F>(
+    sdf: F,
+    width: u32,
+    height: u32,
+    settings: RasterSettings,
+    frame_count: usize,
+    dt: f32,
+) -> Vec<Vec<u8>>
+where
+    F: Fn(Vec2, f32) -> f32,
+{
+    (0..frame_count)
+        .map(|i| {
+            let t = i as f32 * dt;
+            rasterize(|p| sdf(p, t), width, height, settings)
+        })
+        .collect()
 }
 
 /// Write an RGB pixel buffer to an uncompressed 24-bit BMP file.
@@ -142,31 +192,31 @@ mod tests {
 
     fn unit_circle(p: Vec2) -> f32 { p.length() - 1.0 }
 
-    const SETTINGS: RasterSettings = RasterSettings { scale: 3.0, edge_width: 0.02 };
+    const SETTINGS: RasterSettings = RasterSettings { scale: 3.0, edge_width: 0.02, flat_bg: false };
 
     // T1 — pixel color function
 
     #[test]
     fn inside_is_white() {
-        assert_eq!(pixel_color(-0.5, 0.02), [255, 255, 255]);
+        assert_eq!(pixel_color(-0.5, 0.02, false), [255, 255, 255]);
     }
 
     #[test]
     fn edge_is_gray() {
-        let c = pixel_color(0.0, 0.02);
+        let c = pixel_color(0.0, 0.02, false);
         assert_eq!(c, [160, 160, 160]);
     }
 
     #[test]
     fn outside_is_dark() {
-        let c = pixel_color(1.0, 0.02);
+        let c = pixel_color(1.0, 0.02, false);
         assert!(c[0] < 100 && c[2] < 100, "outside should be dark, got {c:?}");
     }
 
     #[test]
     fn outside_gets_darker_with_distance() {
-        let near = pixel_color(0.1, 0.02);
-        let far  = pixel_color(1.0, 0.02);
+        let near = pixel_color(0.1, 0.02, false);
+        let far  = pixel_color(1.0, 0.02, false);
         // Further = darker = lower blue channel
         assert!(far[2] <= near[2], "further should be darker: near={near:?} far={far:?}");
     }
@@ -218,6 +268,56 @@ mod tests {
             .sum();
         let diff = (left_sum as i64 - right_sum as i64).unsigned_abs();
         assert!(diff < 50, "symmetric SDF should produce symmetric pixels, diff={diff}");
+    }
+
+    // T2 — rasterize_sequence
+
+    #[test]
+    fn sequence_correct_frame_count() {
+        let sdf = |p: Vec2, _t: f32| p.length() - 1.0;
+        let frames = rasterize_sequence(sdf, 8, 8, SETTINGS, 6, 0.1);
+        assert_eq!(frames.len(), 6);
+    }
+
+    #[test]
+    fn sequence_each_frame_correct_length() {
+        let sdf = |p: Vec2, _t: f32| p.length() - 1.0;
+        let frames = rasterize_sequence(sdf, 8, 8, SETTINGS, 3, 0.1);
+        for frame in &frames {
+            assert_eq!(frame.len(), 8 * 8 * 3);
+        }
+    }
+
+    #[test]
+    fn sequence_frame0_matches_t0_rasterize() {
+        // Frame 0 (t=0) should be identical to rasterize() with t=0 baked in
+        let sdf = |p: Vec2, _t: f32| p.length() - 1.0;
+        let frames  = rasterize_sequence(sdf, 8, 8, SETTINGS, 2, 0.5);
+        let direct  = rasterize(|p| p.length() - 1.0, 8, 8, SETTINGS);
+        assert_eq!(frames[0], direct);
+    }
+
+    #[test]
+    fn sequence_moving_shape_frames_differ() {
+        // A bouncing circle: centre moves over time, so frames should differ
+        // at pixels near the boundary.
+        let sdf = |p: Vec2, t: f32| {
+            let centre = Vec2::new(0.0, (t * std::f32::consts::PI).sin() * 0.3);
+            (p - centre).length() - 0.3
+        };
+        let frames = rasterize_sequence(sdf, 16, 16, SETTINGS, 2, 0.5);
+        // With t=0: centre at (0,0). With t=0.5: centre at (0, sin(π/2)*0.3)=(0,0.3).
+        // At least some pixels should differ.
+        let differ = frames[0].iter().zip(frames[1].iter()).any(|(a, b)| a != b);
+        assert!(differ, "frames should differ as shape moves");
+    }
+
+    #[test]
+    fn sequence_static_shape_frames_identical() {
+        // A static SDF that ignores t should produce identical frames
+        let sdf = |p: Vec2, _t: f32| p.length() - 0.5;
+        let frames = rasterize_sequence(sdf, 8, 8, SETTINGS, 4, 0.25);
+        assert!(frames.windows(2).all(|w| w[0] == w[1]), "static SDF should produce identical frames");
     }
 
     // T2 — BMP output

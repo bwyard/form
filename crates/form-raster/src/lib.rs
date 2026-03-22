@@ -9,4 +9,4 @@
 //! Used to prove each corruption warp in 2D before extending to 3D.
 
 pub mod raster;
-pub use raster::{rasterize, RasterSettings, to_bmp};
+pub use raster::{rasterize, rasterize_sequence, RasterSettings, to_bmp};

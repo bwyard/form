@@ -8,3 +8,5 @@ dist/
 packages/form-noise-wasm/
 # thesis docs — local only, not ready to publish
 THESIS.md
+# rendered output — generated, not committed
+*.bmp

@@ -15,7 +15,7 @@ fn main() {
 
     let sdf = |p: Vec2| p.length() - 1.0;
 
-    let settings = RasterSettings { scale: 3.0, edge_width: 0.02 };
+    let settings = RasterSettings { scale: 3.0, edge_width: 0.02, flat_bg: false };
 
     println!("Rendering circle 2D ({width}x{height})...");
     println!("T3 Expected: white filled circle, gray edge ring, dark background");
