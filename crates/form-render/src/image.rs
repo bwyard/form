@@ -211,7 +211,7 @@ pub fn to_bmp(pixels: &[u8], width: u32, height: u32) -> Vec<u8> {
             );
             // row padding
             let pad = (row_size - width * 3) as usize;
-            buf.extend(std::iter::repeat(0u8).take(pad));
+            buf.extend(std::iter::repeat_n(0u8, pad));
             ((), buf)
         },
     );
