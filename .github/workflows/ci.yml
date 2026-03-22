@@ -76,3 +76,17 @@ jobs:
 
       - name: wasm-pack build form-noise
         run: wasm-pack build crates/form-noise --target web --out-dir ../../packages/form-noise-wasm
+
+  typescript:
+    name: TypeScript — lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 10
+      - run: pnpm install
+      - run: pnpm lint

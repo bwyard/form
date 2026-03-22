@@ -5,6 +5,12 @@
   "scripts": {
     "test": "cargo test --workspace",
     "build": "cargo build --workspace",
-    "watch": "cargo watch -x 'test -p form-sdf'"
-  }
+    "watch": "cargo watch -x 'test -p form-sdf'",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "@typescript-eslint/parser": "^8.0.0"
+  },
+  "type": "module"
 }
