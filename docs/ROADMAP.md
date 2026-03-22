@@ -6,32 +6,15 @@ Last updated: 2026-03-21
 
 ---
 
-## Thesis
+## Design model
 
-**Math thesis:** Creative outputs are mathematical objects, not processes.
+A scene is a pure function of space:
 
-Form proves this for the visual domain:
-
-> `shape = f(description, position)` — a scene is a pure function of space.
+> `shape = f(description, position)`
 
 No mesh files. No geometry tables. No state. Given the same description and the same point in space, the same value comes back every time. The SDF is the object.
 
-This is one of four simultaneous proofs across the projects:
-
-| Project | Domain | Claim |
-|---|---|---|
-| Prime | Foundation | Pure functions exist with no domain — computation without side effects |
-| Score | Music | `output[n] = f(song, n, sr)` — composition is a pure function of time |
-| **Form** | **Visual art** | **`shape = f(description, position)` — scene is a pure function of space** |
-| Stage | Experience | `experience = f(world, t, pos)` — experience is a pure function of state and time |
-
-All four together prove that mutation is not required — only a scan loop and explicit state threading.
-
 ### No STORE. No JUMP.
-
-Score's assembly rule is: no STORE, no JUMP, only APPEND+ADVANCE. The sample loop advances time and evaluates. Nothing is cached or branched to.
-
-Form follows the same rule in the spatial domain:
 
 - **No STORE** — no mesh files, no geometry tables, no stored normals, no keyframes
 - **No JUMP** — the ray marcher does not branch to precomputed data
@@ -39,18 +22,7 @@ Form follows the same rule in the spatial domain:
 
 The corruption stack enforces this at every level of detail. Micro-surface texture is not a stored normal map — it is FBM evaluated at that position. Every complexity, at every scale, is evaluation not lookup.
 
-| | Score | Form |
-|---|---|---|
-| Axis | Time (`n`) | Space (`p`) |
-| Scan loop | Sample loop | Ray march |
-| Rule | APPEND+ADVANCE | MARCH+EVALUATE |
-| Pure function | `f(song, n, sr)` | `f(description, p)` |
-| No STORE | No audio buffers in DSL layer | No mesh, no stored geometry |
-| No JUMP | No conditional branches to cached samples | No lookup tables, no precomputed normals |
-
-### One model, four axis types
-
-At the assembly level APPEND+ADVANCE and MARCH+EVALUATE are the same four instructions:
+### The scan loop pattern
 
 ```
 LOAD    cursor          // read current position on the axis
@@ -59,17 +31,11 @@ APPEND  result          // emit the output
 ADVANCE cursor          // move forward
 ```
 
-The axis type is the only variable:
-
-| Project | Cursor type | Axis |
+| | Score | Form |
 |---|---|---|
-| Score | `n: u64` | time (sample index) |
-| Form | `p: Vec3` | space (position along ray) |
-| Stage | `(world, t, pos)` | state-time |
-
-This means the thesis is not four separate proofs — it is one proof instantiated four times with different axis types. Prime is the shared foundation that all four compile onto. When Prime gains an explicit scan/march loop primitive, all four consumers will call the same instruction.
-
-The assembly rule is: **no STORE, no JUMP — only LOAD, EVAL, APPEND, ADVANCE.**
+| Axis | Time (`n`) | Space (`p`) |
+| Scan loop | Sample loop | Ray march |
+| Pure function | `f(song, n, sr)` | `f(description, p)` |
 
 ---
 
